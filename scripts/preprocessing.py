@@ -33,6 +33,7 @@ dds.deseq2()
 dds.vst()
 vst_data = dds.layers["vst_counts"]
 vst_data_df = pd.DataFrame(vst_data, index=dds.obs_names, columns=dds.var_names)
+vst_data_df.to_csv(PROCESSED / "vst_brca.csv")
 
 # PCA
 pca = PCA(n_components=2)
@@ -58,6 +59,7 @@ stat_res = DeseqStats(dds, contrast=["condition", "tumor", "normal"])
 stat_res.summary()
 df_deg = stat_res.results_df
 df_deg_filtered = df_deg[(df_deg['padj'] < 0.05) & (df_deg['log2FoldChange'].abs() > 1)]
+df_deg_filtered.to_csv(PROCESSED / "deg_brca.csv")
 
 # Visualizaciones
 def plot_volcano(res_df):

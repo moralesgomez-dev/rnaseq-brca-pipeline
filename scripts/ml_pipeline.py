@@ -299,3 +299,4 @@ plt.tight_layout()
 plt.savefig(FIGURES / "top20_rf_feature_importance.png", dpi=150)
 plt.show()
 
+deg_data.to_excel(PROCESSED / "deg_brca.xlsx", index=True)
