@@ -1,15 +1,27 @@
-# 4.1
-# Define el problema: clasificación binaria (tumor vs normal). Usa como features los valores VST de los genes. 
-# Ojo: si usas solo los DEGs reduces dimensionalidad y justificas la selección biológicamente.
-
-# El problema se trata de clasificacion binaria: es decir, es tumor o es normal. 
-# Las feautures que tenemos son: valores VST de los genes
-# Posteriormente, podemos reducir la dimensionalidad usando solo los DEGs, lo cual tiene sentido biológico y justifica la selección de features.
-
-# Carga de datos
+# Imports
 from matplotlib import pyplot as plt
 import pandas as pd
+import numpy as np
 from pathlib import Path
+from sklearn.model_selection import (
+    RandomizedSearchCV,
+    StratifiedGroupKFold,
+    cross_val_predict,
+    cross_validate,
+)
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    auc,
+    classification_report,
+    confusion_matrix,
+    make_scorer,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+)
+
+# Carga de datos
 
 ROOT = Path(__file__).parent.parent
 FIGURES = ROOT / "results" / "figures"
@@ -24,16 +36,7 @@ metadata = pd.read_csv(
 
 data = vst.join(metadata[["condition"]], how="inner")
 
-# 4.2
-# Divide en train/test por paciente y conserva la proporción tumor/normal. Reflexiona sobre data leakage: 
-# la normalización y selección de features debe hacerse DENTRO del fold de entrenamiento si haces CV.
-
-from sklearn.model_selection import (
-    RandomizedSearchCV,
-    StratifiedGroupKFold,
-    cross_val_predict,
-    cross_validate,
-)
+# Split personalizado para evitar que pacientes compartidos entre train y test.
 
 patient_ids = data.index.to_series().str.split("-").str[:3].str.join("-")
 outer_cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
@@ -57,21 +60,7 @@ y_train = train_set["condition"]
 X_test = test_set.drop(columns=["condition"])
 y_test = test_set["condition"]
 
-# 4.3
-# Entrena 3 modelos: Logistic Regression, Random Forest, y CatBoost. 
-# Usa cross-validation para evaluar, no solo el test set.
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    auc,
-    classification_report,
-    confusion_matrix,
-    make_scorer,
-    recall_score,
-    roc_auc_score,
-    roc_curve,
-)
+# Scores de evaluacion
 
 scoring = {
     "tumor_recall": make_scorer(recall_score, pos_label="tumor"),
@@ -93,7 +82,6 @@ cv_results = cross_validate(
     groups=patient_ids.loc[X_train.index],
     scoring=scoring,
 )
-
 
 baseline_model.fit(X_train, y_train)
 
@@ -153,8 +141,7 @@ for metric in scoring:
 
 rf_model.fit(X_train, y_train)
 
-# 4.4
-# Compara modelos con CV y dibuja ROC con predicciones out-of-fold.
+# Comparación de modelos y curvas ROC
 
 results_df = pd.DataFrame(results).T
 groups_train = patient_ids.loc[X_train.index]
@@ -189,7 +176,7 @@ plt.title("Cross-Validated ROC Curves")
 plt.legend()
 plt.show()
 
-# Ajusta Random Forest usando solamente los pacientes de entrenamiento.
+# Ajuste-fino Random Forest 
 params = {
     "n_estimators": [100, 200, 300],
     "max_depth": [None, 10, 20, 30],
@@ -237,10 +224,7 @@ plt.title("Random Forest ROC Curve on Test Set")
 plt.legend()
 plt.show()
 
-
-# some sanity checks
-
-import numpy as np
+# Sanity checks
 
 permuted_auc = []
 
@@ -262,11 +246,7 @@ for seed in range(10):
 print("AUC with shuffled labels:", permuted_auc)
 print("Mean:", np.mean(permuted_auc))
 
-
-# 4.5
-# Extrae feature importance del mejor modelo. ¿Qué genes son los más predictivos? 
-# ¿Coinciden con los DEGs más significativos? ¿Tienen sentido biológico? 
-# Esta interpretación es lo que diferencia al bioinformático del data scientist genérico.
+# Feature importance y DEGs mas significativos
 
 importance = pd.Series(
     best_rf.feature_importances_,
@@ -275,18 +255,12 @@ importance = pd.Series(
 
 print(importance.head(20))
 
-# Compara los genes más importantes con los DEGs más significativos (20)
 deg_data = pd.read_csv(r"C:\Users\alexm\Desktop\proyectos\rnaseq-brca-pipeline\rnaseq-brca-pipeline\data\processed\deg_brca.csv", index_col=0)
 top_degs = deg_data.sort_values("padj").head(20)
 
 top_importance_genes = importance.head(20).index
 common_genes = set(top_importance_genes) & set(top_degs.index)
 print("Common genes between top importance and top DEGs:", common_genes)
-
-
-# 4.6
-# Genera un gráfico de barras horizontal con los top 20 genes por importancia. 
-# Incluye el nombre del gen, no solo el ID. figura clave
 
 top_importance = importance.head(20).sort_values(ascending=True)
 
